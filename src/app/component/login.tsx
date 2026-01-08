@@ -1,7 +1,12 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
-import { loginDokter, loginAdmin } from "@/lib/api";
+import { loginDokter, loginAdmin } from "@/lib/api-helper";
+
+// Static imports for Electron compatibility
+import logoImage from "../../../public/assets/LOGO_CAREIT.svg";
+import medicalIllustration from "../../../public/assets/Login/logindokterbanyak.svg";
+import silhouetteImage from "../../../public/assets/Login/siluetLogin.svg";
 
 interface LoginProps {
   onLoginSuccess?: (role: string) => void;
@@ -35,14 +40,14 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
     try {
       const trimmedInput = email.trim();
       const trimmedPassword = password.trim();
-      
+
       // Deteksi apakah input adalah email (dokter) atau username (admin)
       // Jika mengandung @, berarti dokter, jika tidak berarti admin
       const isDokter = trimmedInput.includes("@");
-      
+
       let response;
       let role: string;
-      
+
       if (isDokter) {
         // Login sebagai dokter
         response = await loginDokter({
@@ -69,7 +74,7 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
         // Store token
         if (response.data.token) {
           localStorage.setItem("token", response.data.token);
-          
+
           // Store role-specific user info
           if (isDokter && 'dokter' in response.data) {
             localStorage.setItem("dokter", JSON.stringify(response.data.dokter));
@@ -77,7 +82,7 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
             localStorage.setItem("admin", JSON.stringify(response.data.admin));
           }
         }
-        
+
         localStorage.setItem("isAuthenticated", "true");
         localStorage.setItem("userRole", role);
 
@@ -108,7 +113,7 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
             className="cursor-pointer"
           >
             <Image
-              src="/assets/LOGO_CAREIT.svg"
+              src={logoImage}
               alt="CARE-IT Logo"
               width={180}
               height={90}
@@ -121,7 +126,7 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
         {/* 3D Medical Illustration - Reduced size on mobile */}
         <div className="flex items-center justify-center relative h-[100px] sm:h-[120px] md:h-[140px] lg:flex-1 lg:min-h-[400px] lg:h-auto flex-1">
           <Image
-            src="/assets/Login/logindokterbanyak.svg"
+            src={medicalIllustration}
             alt="Medical Professionals Illustration"
             width={800}
             height={667}
@@ -136,14 +141,14 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
         {/* Silhouette Decorative Element - Background */}
         <div className="absolute inset-0 flex items-center justify-end overflow-visible">
           <Image
-            src="/assets/Login/siluetLogin.svg"
+            src={silhouetteImage}
             alt="Login Silhouette"
             width={965}
             height={1024}
             className="object-contain h-full w-auto opacity-30"
             priority
-            style={{ 
-              minHeight: '100%', 
+            style={{
+              minHeight: '100%',
               maxHeight: '100%',
               filter: 'brightness(0) saturate(100%) invert(40%) sepia(90%) saturate(2000%) hue-rotate(190deg) brightness(0.9) contrast(1.1)'
             }}
@@ -209,14 +214,14 @@ const Login = ({ onLoginSuccess, onBackToLanding }: LoginProps) => {
         {/* Silhouette Decorative Element - Background Mobile */}
         <div className="absolute inset-0 flex items-center justify-end overflow-visible">
           <Image
-            src="/assets/Login/siluetLogin.svg"
+            src={silhouetteImage}
             alt="Login Silhouette"
             width={965}
             height={1024}
             className="object-contain h-full w-auto opacity-20"
             priority
-            style={{ 
-              minHeight: '100%', 
+            style={{
+              minHeight: '100%',
               maxHeight: '100%',
               filter: 'brightness(0) saturate(100%) invert(40%) sepia(90%) saturate(2000%) hue-rotate(190deg) brightness(0.9) contrast(1.1)'
             }}

@@ -9,7 +9,7 @@ const Fornas = () => {
 
       <div className="w-full h-[calc(100vh-100px)] sm:h-[calc(100vh-120px)] md:h-[calc(100vh-140px)] rounded-lg overflow-hidden border border-blue-200">
         <iframe
-          src="/assets/PDF/FORNAS_2023.pdf"
+          src="./assets/PDF/FORNAS_2023.pdf"
           className="w-full h-full"
           title="FORNAS PDF"
         />

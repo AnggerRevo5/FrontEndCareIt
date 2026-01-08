@@ -4,6 +4,9 @@ import Image from "next/image";
 import { useState } from "react";
 import { FaChevronDown } from "react-icons/fa";
 
+// Static import for logo
+import logoImage from "../../../public/assets/LOGO_CAREIT.svg";
+
 interface SidebarProps {
   isSidebarOpen: boolean;
   setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -13,6 +16,7 @@ interface SidebarProps {
     name: string;
     icon: string;
   }[];
+  userRole?: "dokter" | "admin" | "";
 }
 
 const Sidebar = ({
@@ -21,13 +25,27 @@ const Sidebar = ({
   activeMenu,
   setActiveMenu,
   menuItems,
+  userRole,
 }: SidebarProps) => {
   const [informasiDropdownOpen, setInformasiDropdownOpen] = useState(false);
   const [warningDropdownOpen, setWarningDropdownOpen] = useState(false);
+  const [ruanganDropdownOpen, setRuanganDropdownOpen] = useState(false);
 
+  // Handler untuk item di dalam dropdown (tetap buka dropdown)
+  const handleDropdownItemClick = (menuName: string) => {
+    setActiveMenu(menuName);
+    setIsSidebarOpen(false);
+    // Dropdown tetap terbuka
+  };
+
+  // Handler untuk menu tanpa dropdown (Home, Ruangan) - tutup semua dropdown
   const handleMenuClick = (menuName: string) => {
     setActiveMenu(menuName);
     setIsSidebarOpen(false);
+    // Tutup semua dropdown saat klik menu item tanpa dropdown
+    setInformasiDropdownOpen(false);
+    setWarningDropdownOpen(false);
+    setRuanganDropdownOpen(false);
   };
 
   const informasiItems = [
@@ -40,6 +58,10 @@ const Sidebar = ({
   const billingItems = [
     { name: "Billing Pasien", icon: "📝" },
     { name: "Riwayat Billing Pasien", icon: "📊" },
+  ];
+
+  const ruanganItems = [
+    { name: "Ruangan", icon: "🏢" },
   ];
 
   return (
@@ -67,7 +89,7 @@ const Sidebar = ({
         {/* LOGO */}
         <div className="p-3 sm:p-5 flex justify-center border-b border-blue-100">
           <Image
-            src="/assets/LOGO_CAREIT.svg"
+            src={logoImage}
             alt="Care It Logo"
             width={140}
             height={70}
@@ -83,10 +105,9 @@ const Sidebar = ({
             className={`
               w-full flex items-center gap-2 sm:gap-3 py-2 sm:py-3 px-2 sm:px-4
               rounded-lg sm:rounded-xl text-left transition-all
-              ${
-                activeMenu === "Home"
-                  ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
-                  : "text-gray-400 hover:bg-white"
+              ${activeMenu === "Home"
+                ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
+                : "text-gray-400 hover:bg-white"
               }
             `}
           >
@@ -100,31 +121,34 @@ const Sidebar = ({
           <div>
             <button
               onClick={() => {
-                setInformasiDropdownOpen(!informasiDropdownOpen);
-                if (!informasiDropdownOpen) setWarningDropdownOpen(false);
+                // Jika dropdown sedang terbuka, tutup; jika tertutup, buka dan tutup yang lain
+                if (informasiDropdownOpen) {
+                  setInformasiDropdownOpen(false);
+                } else {
+                  setInformasiDropdownOpen(true);
+                  setWarningDropdownOpen(false);
+                  setRuanganDropdownOpen(false);
+                }
               }}
               className={`
                 w-full flex items-center justify-between gap-2 sm:gap-3 py-2 sm:py-3 px-2 sm:px-4
                 rounded-lg sm:rounded-xl text-left transition-all
-                ${
-                  informasiItems.some((item) => activeMenu === item.name)
-                    ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
-                    : "text-gray-400 hover:bg-white"
+                ${informasiItems.some((item) => activeMenu === item.name)
+                  ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
+                  : "text-gray-400 hover:bg-white"
                 }
               `}
             >
               <div className="flex items-center gap-2 sm:gap-3">
-                <span className={`text-base sm:text-lg ${
-                  informasiItems.some((item) => activeMenu === item.name) ? "text-blue-500" : ""
-                }`}>
+                <span className={`text-base sm:text-lg ${informasiItems.some((item) => activeMenu === item.name) ? "text-blue-500" : ""
+                  }`}>
                   ℹ️
                 </span>
                 <span className="text-xs sm:text-sm font-medium">Informasi Umum</span>
               </div>
               <FaChevronDown
-                className={`text-xs transition-transform ${
-                  informasiDropdownOpen ? "rotate-180" : ""
-                }`}
+                className={`text-xs transition-transform ${informasiDropdownOpen ? "rotate-180" : ""
+                  }`}
               />
             </button>
 
@@ -134,14 +158,13 @@ const Sidebar = ({
                 {informasiItems.map((item, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleMenuClick(item.name)}
+                    onClick={() => handleDropdownItemClick(item.name)}
                     className={`
                       w-full flex items-center gap-2 sm:gap-3 py-2 px-2 sm:px-3
                       rounded-lg text-left text-xs sm:text-sm transition-all
-                      ${
-                        activeMenu === item.name
-                          ? "bg-blue-500 text-white"
-                          : "text-gray-600 hover:bg-blue-100"
+                      ${activeMenu === item.name
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-600 hover:bg-blue-100"
                       }
                     `}
                   >
@@ -157,31 +180,34 @@ const Sidebar = ({
           <div>
             <button
               onClick={() => {
-                setWarningDropdownOpen(!warningDropdownOpen);
-                if (!warningDropdownOpen) setInformasiDropdownOpen(false);
+                // Jika dropdown sedang terbuka, tutup; jika tertutup, buka dan tutup yang lain
+                if (warningDropdownOpen) {
+                  setWarningDropdownOpen(false);
+                } else {
+                  setWarningDropdownOpen(true);
+                  setInformasiDropdownOpen(false);
+                  setRuanganDropdownOpen(false);
+                }
               }}
               className={`
                 w-full flex items-center justify-between gap-2 sm:gap-3 py-2 sm:py-3 px-2 sm:px-4
                 rounded-lg sm:rounded-xl text-left transition-all
-                ${
-                  billingItems.some((item) => activeMenu === item.name)
-                    ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
-                    : "text-gray-400 hover:bg-white"
+                ${billingItems.some((item) => activeMenu === item.name)
+                  ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
+                  : "text-gray-400 hover:bg-white"
                 }
               `}
             >
               <div className="flex items-center gap-2 sm:gap-3">
-                <span className={`text-base sm:text-lg ${
-                  billingItems.some((item) => activeMenu === item.name) ? "text-blue-500" : ""
-                }`}>
+                <span className={`text-base sm:text-lg ${billingItems.some((item) => activeMenu === item.name) ? "text-blue-500" : ""
+                  }`}>
                   ⚠️
                 </span>
                 <span className="text-xs sm:text-sm font-medium">Warning Billing Sign</span>
               </div>
               <FaChevronDown
-                className={`text-xs transition-transform ${
-                  warningDropdownOpen ? "rotate-180" : ""
-                }`}
+                className={`text-xs transition-transform ${warningDropdownOpen ? "rotate-180" : ""
+                  }`}
               />
             </button>
 
@@ -191,14 +217,13 @@ const Sidebar = ({
                 {billingItems.map((item, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleMenuClick(item.name)}
+                    onClick={() => handleDropdownItemClick(item.name)}
                     className={`
                       w-full flex items-center gap-2 sm:gap-3 py-2 px-2 sm:px-3
                       rounded-lg text-left text-xs sm:text-sm transition-all
-                      ${
-                        activeMenu === item.name
-                          ? "bg-blue-500 text-white"
-                          : "text-gray-600 hover:bg-blue-100"
+                      ${activeMenu === item.name
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-600 hover:bg-blue-100"
                       }
                     `}
                   >
@@ -209,6 +234,24 @@ const Sidebar = ({
               </div>
             )}
           </div>
+
+          {/* Ruangan Menu - Available for both Admin and Dokter */}
+          <button
+            onClick={() => handleMenuClick("Ruangan")}
+            className={`
+              w-full flex items-center gap-2 sm:gap-3 py-2 sm:py-3 px-2 sm:px-4
+              rounded-lg sm:rounded-xl text-left transition-all
+              ${activeMenu === "Ruangan"
+                ? "bg-white text-blue-600 border-l-4 border-blue-500 shadow-sm"
+                : "text-gray-400 hover:bg-white"
+              }
+            `}
+          >
+            <span className={`text-base sm:text-lg ${activeMenu === "Ruangan" ? "text-blue-500" : ""}`}>
+              🏢
+            </span>
+            <span className="text-xs sm:text-sm font-medium">Ruangan</span>
+          </button>
         </nav>
       </div>
     </>

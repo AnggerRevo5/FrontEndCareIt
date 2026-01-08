@@ -1,23 +1,30 @@
 // API Configuration and Utilities
-// Auto-detect platform: use Next.js API routes for web, direct backend calls for mobile
+// Auto-detect platform: use Next.js API routes for web, direct backend calls for mobile/Electron
 
 // Detect if running in Capacitor (mobile app)
-const isCapacitor = typeof window !== 'undefined' && 
+const isCapacitor = typeof window !== 'undefined' &&
   (window as any).Capacitor !== undefined;
 
-// For web: use Next.js API routes (proxy)
-// For mobile: use direct backend URL
+// Detect if running in Electron (desktop app)
+const isElectron = typeof window !== 'undefined' &&
+  (window as any).electron !== undefined;
+
+// All platforms: use direct backend URL
 const getApiBaseUrl = (): string => {
   if (isCapacitor) {
     // Mobile app: direct backend call
-    return process.env.NEXT_PUBLIC_API_URL || "http://10.0.2.2:8081";
+    return process.env.NEXT_PUBLIC_API_URL || "http://31.97.109.192:8082";
+  } else if (isElectron) {
+    // Electron desktop app: direct backend call
+    return process.env.NEXT_PUBLIC_API_URL || "http://31.97.109.192:8082";
   } else {
-    // Web browser: use Next.js API routes
-    return "/api";
+    // Web browser: direct backend call
+    return process.env.NEXT_PUBLIC_API_URL || "http://31.97.109.192:8082";
   }
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
 
 interface ApiResponse<T> {
   data?: T;
@@ -39,27 +46,15 @@ export async function apiRequest<T>(
 
   // Build URL based on platform
   let url: string;
-  
-  if (isCapacitor) {
-    // Mobile: direct backend call
-    // Remove /api prefix if present, then prepend backend URL
-    const cleanEndpoint = endpoint.startsWith("/api/") 
-      ? endpoint.substring(4) // Remove "/api"
-      : endpoint.startsWith("/") 
-        ? endpoint 
-        : `/${endpoint}`;
-    url = `${API_BASE_URL}${cleanEndpoint}`;
-  } else {
-    // Web: use Next.js API routes
-    // Ensure endpoint starts with /api/
-    if (endpoint.startsWith("/api/")) {
-      url = endpoint;
-    } else if (endpoint.startsWith("/")) {
-      url = `/api${endpoint}`;
-    } else {
-      url = `/api/${endpoint}`;
-    }
-  }
+
+  // All platforms use direct backend call
+  const cleanEndpoint = endpoint.startsWith("/api/")
+    ? endpoint.substring(4) // Remove "/api"
+    : endpoint.startsWith("/")
+      ? endpoint
+      : `/${endpoint}`;
+  url = `${API_BASE_URL}${cleanEndpoint}`;
+
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -150,9 +145,8 @@ export async function getTarifRumahSakit(
     }
   });
 
-  const endpoint = `/api/tarifRS${
-    queryParams.toString() ? "?" + queryParams.toString() : ""
-  }`;
+  const endpoint = `/api/tarifRS${queryParams.toString() ? "?" + queryParams.toString() : ""
+    }`;
   return apiRequest<TarifData[]>(endpoint);
 }
 
@@ -222,13 +216,13 @@ export async function loginDokter(
       status: 400,
     };
   }
-  
+
   // Ensure credentials are properly formatted
   const payload = {
     email: credentials.email.trim(),
     password: credentials.password.trim(),
   };
-  
+
   // Ensure body is not empty
   const bodyString = JSON.stringify(payload);
   if (!bodyString || bodyString === "{}") {
@@ -237,7 +231,7 @@ export async function loginDokter(
       status: 400,
     };
   }
-  
+
   return apiRequest<LoginResponse>("/api/login", {
     method: "POST",
     body: bodyString,
@@ -270,13 +264,13 @@ export async function loginAdmin(
       status: 400,
     };
   }
-  
+
   // Ensure credentials are properly formatted
   const payload = {
     Nama_Admin: credentials.nama_admin.trim(),
     Password: credentials.password.trim(),
   };
-  
+
   // Ensure body is not empty
   const bodyString = JSON.stringify(payload);
   if (!bodyString || bodyString === "{}") {
@@ -285,7 +279,7 @@ export async function loginAdmin(
       status: 400,
     };
   }
-  
+
   return apiRequest<AdminLoginResponse>("/api/admin/login", {
     method: "POST",
     body: bodyString,
@@ -423,16 +417,20 @@ export async function searchPasien(
 export interface BillingRequest {
   nama_dokter: string[];
   nama_pasien: string;
+  id_pasien?: number;
   jenis_kelamin: string;
   usia: number;
   ruangan: string;
   kelas: string;
   tindakan_rs: string[];
+  billing_sign?: string | null;
+  tanggal_masuk?: string;
   tanggal_keluar?: string;
   icd9: string[];
   icd10: string[];
   cara_bayar: string;
   total_tarif_rs: number;
+  total_klaim_bpjs?: number; // ← Added: Baseline BPJS claim amount from FE
 }
 
 export interface BillingResponse {
@@ -485,6 +483,18 @@ export async function getAllBilling(): Promise<
   ApiResponse<{ status: string; data: any[] }>
 > {
   return apiRequest<{ status: string; data: any[] }>("/api/admin/billing");
+}
+
+export async function getBillingById(
+  id: number
+): Promise<ApiResponse<any>> {
+  return apiRequest<any>(`/api/admin/billing/${id}`);
+}
+
+export async function getRuanganDenganPasien(): Promise<
+  ApiResponse<any[]>
+> {
+  return apiRequest<any[]>("/api/admin/ruangan-dengan-pasien");
 }
 
 export interface PostINACBGRequest {

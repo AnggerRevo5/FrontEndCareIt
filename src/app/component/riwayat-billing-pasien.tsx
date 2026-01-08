@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { FaSearch, FaEdit } from 'react-icons/fa';
-import { getAllBilling } from '@/lib/api';
+import { getAllBilling } from '@/lib/api-helper';
 
 interface RiwayatBillingPasienProps {
   onLogout?: () => void;
   userRole?: "dokter" | "admin";
-  onEdit?: (billingId: number) => void;
+  onEdit?: (billingId: number, pasienName?: string) => void;
   selectedRuangan?: string | null;
 }
 
@@ -85,12 +85,12 @@ const RiwayatBillingPasien = ({ onLogout, userRole, onEdit, selectedRuangan }: R
             dataArray = response.data;
           } 
           // Check if response.data has a data property
-          else if (response.data.data && Array.isArray(response.data.data)) {
-            dataArray = response.data.data;
+          else if ((response.data as any).data && Array.isArray((response.data as any).data)) {
+            dataArray = (response.data as any).data;
           }
           // Check if response.data has a status and data property
-          else if (response.data.status && response.data.data && Array.isArray(response.data.data)) {
-            dataArray = response.data.data;
+          else if ((response.data as any).status && (response.data as any).data && Array.isArray((response.data as any).data)) {
+            dataArray = (response.data as any).data;
           } else {
             console.error('Unexpected response structure:', response.data);
             setError('Format data tidak dikenali');
@@ -175,6 +175,24 @@ const RiwayatBillingPasien = ({ onLogout, userRole, onEdit, selectedRuangan }: R
       return "bg-yellow-500";
     } else {
       return "bg-gray-400";
+    }
+  };
+
+  // Calculate warning sign dynamically based on current tarif RS vs existing klaim
+  // This ensures warning updates even if INACBG hasn't been input yet
+  const calculateDynamicWarningSign = (totalTarifRS: number | undefined, totalKlaim: number | undefined): string => {
+    if (!totalTarifRS || !totalKlaim || totalTarifRS <= 0 || totalKlaim <= 0) {
+      return ""; // No data to calculate
+    }
+
+    const percentage = (totalTarifRS / totalKlaim) * 100;
+    
+    if (percentage <= 25) {
+      return "Hijau"; // Safe
+    } else if (percentage <= 50) {
+      return "Kuning"; // Warning
+    } else {
+      return "Merah"; // Alert
     }
   };
 
@@ -298,17 +316,42 @@ const RiwayatBillingPasien = ({ onLogout, userRole, onEdit, selectedRuangan }: R
                       {namaDokter || '-'}
                     </td>
                     <td className="px-4 md:px-6 lg:px-8 py-3 md:py-4">
-                      <div className="flex items-center gap-3 md:gap-4 justify-between">
-                        <span
-                          className={`${getStatusColor(
-                            billingSign
-                          )} w-16 md:w-20 lg:w-24 h-5 md:h-6 lg:h-7 rounded-full flex-shrink-0`}
-                        ></span>
+                      <div className="flex items-center gap-3 md:gap-4 justify-between group relative">
+                        {(() => {
+                          // Calculate dynamic warning sign if tarif data exists
+                          const dynamicSign = calculateDynamicWarningSign(item.total_tarif_rs, item.total_klaim);
+                          const displaySign = dynamicSign || billingSign; // Use dynamic if available, fallback to DB sign
+                          
+                          return (
+                            <>
+                              <span
+                                className={`${getStatusColor(
+                                  displaySign
+                                )} w-16 md:w-20 lg:w-24 h-5 md:h-6 lg:h-7 rounded-full flex-shrink-0 cursor-help`}
+                                title={item.total_tarif_rs && item.total_klaim ? 
+                                  `Tarif RS: Rp ${item.total_tarif_rs?.toLocaleString('id-ID')} | BPJS: Rp ${item.total_klaim?.toLocaleString('id-ID')}` 
+                                  : ''}
+                              ></span>
+                              
+                              {/* Hover Tooltip */}
+                              {item.total_tarif_rs && item.total_klaim && (
+                                <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap z-10">
+                                  Tarif RS: Rp {item.total_tarif_rs?.toLocaleString('id-ID')} | BPJS: Rp {item.total_klaim?.toLocaleString('id-ID')}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                        
                         {userRole === "admin" && (
                           <FaEdit 
                             onClick={() => {
+                              console.log("🖱️ FaEdit clicked! onEdit exists?", !!onEdit, "idBilling:", idBilling, "namaPasien:", namaPasien);
                               if (onEdit && idBilling) {
-                                onEdit(idBilling);
+                                console.log("✅ Calling onEdit with:", idBilling, namaPasien);
+                                onEdit(idBilling, namaPasien);
+                              } else {
+                                console.error("❌ Cannot call onEdit - onEdit exists?", !!onEdit, "idBilling exists?", !!idBilling);
                               }
                             }}
                             className="text-[#2591D0] cursor-pointer hover:text-[#1e7ba8] text-base md:text-lg flex-shrink-0 ml-auto" 
@@ -384,14 +427,26 @@ const RiwayatBillingPasien = ({ onLogout, userRole, onEdit, selectedRuangan }: R
                       Billing Sign
                     </span>
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`${getStatusColor(billingSign)} w-16 h-5 rounded-full flex-shrink-0`}
-                      ></span>
+                      {(() => {
+                        // Calculate dynamic warning sign if tarif data exists
+                        const dynamicSign = calculateDynamicWarningSign(item.total_tarif_rs, item.total_klaim);
+                        const displaySign = dynamicSign || billingSign; // Use dynamic if available, fallback to DB sign
+                        
+                        return (
+                          <span
+                            className={`${getStatusColor(displaySign)} w-16 h-5 rounded-full flex-shrink-0`}
+                          ></span>
+                        );
+                      })()}
                       {userRole === "admin" && (
                         <FaEdit 
                           onClick={() => {
+                            console.log("🖱️ FaEdit (mobile) clicked! onEdit exists?", !!onEdit, "idBilling:", idBilling, "namaPasien:", namaPasien);
                             if (onEdit && idBilling) {
-                              onEdit(idBilling);
+                              console.log("✅ Calling onEdit (mobile) with:", idBilling, namaPasien);
+                              onEdit(idBilling, namaPasien);
+                            } else {
+                              console.error("❌ Cannot call onEdit (mobile) - onEdit exists?", !!onEdit, "idBilling exists?", !!idBilling);
                             }
                           }}
                           className="text-[#2591D0] cursor-pointer hover:text-[#1e7ba8] text-lg flex-shrink-0" 
@@ -399,6 +454,31 @@ const RiwayatBillingPasien = ({ onLogout, userRole, onEdit, selectedRuangan }: R
                       )}
                     </div>
                   </div>
+
+                  {/* Warning Info */}
+                  {item.total_tarif_rs && item.total_klaim && (() => {
+                    // Calculate dynamic warning sign
+                    const dynamicSign = calculateDynamicWarningSign(item.total_tarif_rs, item.total_klaim);
+                    const displaySign = dynamicSign || billingSign;
+                    
+                    return (
+                      <div className="mt-3 p-2 rounded-lg" style={{
+                        backgroundColor: displaySign === 'Merah' ? '#fee2e2' : displaySign === 'Kuning' ? '#fef3c7' : '#ecfdf5',
+                        borderLeft: `4px solid ${displaySign === 'Merah' ? '#dc2626' : displaySign === 'Kuning' ? '#f59e0b' : '#10b981'}`
+                      }}>
+                        <p className="text-xs font-semibold" style={{
+                          color: displaySign === 'Merah' ? '#7f1d1d' : displaySign === 'Kuning' ? '#92400e' : '#065f46'
+                        }}>
+                          {displaySign === 'Merah' ? '⚠️ Tarif RS Melebihi' : displaySign === 'Kuning' ? '⚠️ Mendekati Batas' : '✅ Aman'}
+                        </p>
+                        <p className="text-xs mt-1" style={{
+                          color: displaySign === 'Merah' ? '#991b1b' : displaySign === 'Kuning' ? '#b45309' : '#047857'
+                        }}>
+                          RS: Rp {item.total_tarif_rs?.toLocaleString('id-ID')} | BPJS: Rp {item.total_klaim?.toLocaleString('id-ID')}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );

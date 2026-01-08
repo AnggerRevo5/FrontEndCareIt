@@ -1,6 +1,13 @@
 "use client";
 import Image from "next/image";
 
+// Static imports for assets to ensure they work in Electron build
+import logoImage from "../../../public/assets/LOGO_CAREIT.svg";
+import circleImage from "../../../public/assets/LandingPage/lingkaranLandingPage.svg";
+import doctorImage from "../../../public/assets/LandingPage/dokterLucu.svg";
+import stethoscopeImage from "../../../public/assets/LandingPage/stetoskop.svg";
+import syringeImage from "../../../public/assets/LandingPage/suntik.svg";
+
 interface LandingPageProps {
   onStartNow?: () => void;
 }
@@ -13,7 +20,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Logo */}
         <div className="mb-4 sm:mb-6 lg:mb-8">
           <Image
-            src="/assets/LOGO_CAREIT.svg"
+            src={logoImage}
             alt="CARE-IT Logo"
             width={180}
             height={90}
@@ -34,15 +41,15 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Descriptive Text */}
         <div className="mb-6 sm:mb-8 lg:mb-10 max-w-2xl">
           <p className="text-sm sm:text-base md:text-lg lg:text-xl text-[#2591D0] leading-relaxed">
-            Care It memudahkan dokter memverifikasi tarif tindakan agar sesuai standar BPJS, 
-            dengan fitur warning billing sign yang memberi peringatan otomatis saat tarif melebihi batas, 
+            Care It memudahkan dokter memverifikasi tarif tindakan agar sesuai standar BPJS,
+            dengan fitur warning billing sign yang memberi peringatan otomatis saat tarif melebihi batas,
             sehingga rumah sakit tetap patuh, aman, dan bebas overbilling.
           </p>
         </div>
 
         {/* Call-to-Action Button */}
         <div>
-          <button 
+          <button
             onClick={onStartNow}
             className="bg-[#87CEEB] text-[#2591D0] px-8 sm:px-10 md:px-12 py-3 sm:py-4 md:py-5 rounded-full font-bold text-base sm:text-lg md:text-xl uppercase hover:bg-[#6bb8d8] hover:text-white transition-all duration-300 shadow-lg w-full sm:w-auto"
           >
@@ -57,7 +64,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
           <div className="relative" style={{ transform: 'translate(20%, -20%) scale(1.3)' }}>
             <Image
-              src="/assets/LandingPage/lingkaranLandingPage.svg"
+              src={circleImage}
               alt="Decorative Circle"
               width={695}
               height={738}
@@ -83,7 +90,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
           <div className="relative w-full h-full flex items-center justify-center">
             <div style={{ transform: 'translate(20%, -20%)' }}>
               <Image
-                src="/assets/LandingPage/dokterLucu.svg"
+                src={doctorImage}
                 alt="Doctor Illustration"
                 width={480}
                 height={576}
@@ -97,7 +104,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Floating Stethoscope Icon - Upper Left */}
         <div className="absolute top-20 left-12 xl:left-16 z-20">
           <Image
-            src="/assets/LandingPage/stetoskop.svg"
+            src={stethoscopeImage}
             alt="Stethoscope"
             width={120}
             height={120}
@@ -108,7 +115,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Floating Syringe Icon - Lower Right */}
         <div className="absolute bottom-20 right-12 xl:right-16 z-20">
           <Image
-            src="/assets/LandingPage/suntik.svg"
+            src={syringeImage}
             alt="Syringe"
             width={120}
             height={120}
@@ -123,7 +130,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="relative w-[500px] h-[500px] sm:w-[600px] sm:h-[600px] max-w-none" style={{ transform: 'translate(15%, 10%)' }}>
             <Image
-              src="/assets/LandingPage/lingkaranLandingPage.svg"
+              src={circleImage}
               alt="Decorative Circle"
               width={695}
               height={738}
@@ -147,7 +154,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Doctor Illustration - Mobile */}
         <div className="relative z-10">
           <Image
-            src="/assets/LandingPage/dokterLucu.svg"
+            src={doctorImage}
             alt="Doctor Illustration"
             width={260}
             height={347}
@@ -159,7 +166,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
         {/* Mobile Icons */}
         <div className="absolute top-8 left-12 z-20">
           <Image
-            src="/assets/LandingPage/stetoskop.svg"
+            src={stethoscopeImage}
             alt="Stethoscope"
             width={80}
             height={80}
@@ -169,7 +176,7 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
 
         <div className="absolute bottom-4 right-4 z-20">
           <Image
-            src="/assets/LandingPage/suntik.svg"
+            src={syringeImage}
             alt="Syringe"
             width={80}
             height={80}
@@ -182,3 +189,4 @@ const LandingPage = ({ onStartNow }: LandingPageProps) => {
 };
 
 export default LandingPage;
+

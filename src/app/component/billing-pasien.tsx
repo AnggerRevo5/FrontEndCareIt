@@ -15,14 +15,19 @@ import {
   type ICD10,
   type TarifData,
   type BillingRequest,
-} from '@/lib/api';
+  getBillingAktifByNama,
+} from '@/lib/api-helper';
 
-const BillingPasien = () => {
+interface BillingPasienProps {
+  onEditBilling?: (billingId: number, pasienName: string) => void;
+}
+
+const BillingPasien = ({ onEditBilling }: BillingPasienProps) => {
   // Form state
   const [namaPasien, setNamaPasien] = useState('');
   const [idPasien, setIdPasien] = useState('');
   const [usia, setUsia] = useState('');
-  const [gender, setGender] = useState('Pria');
+  const [gender, setGender] = useState('Laki-Laki');
   const [ruangan, setRuangan] = useState('');
   const [kelas, setKelas] = useState('');
   const [tanggalMasuk, setTanggalMasuk] = useState('');
@@ -30,6 +35,7 @@ const BillingPasien = () => {
   const [dpjp, setDpjp] = useState('');
   const [caraBayar, setCaraBayar] = useState('BPJS');
   const [totalTarifRS, setTotalTarifRS] = useState(0);
+  const [userRole, setUserRole] = useState<string>('');
 
   // Dropdown data
   const [dokterList, setDokterList] = useState<Dokter[]>([]);
@@ -50,6 +56,10 @@ const BillingPasien = () => {
     icd10: string[];
     inacbg?: string[];
     total_tarif_rs: number;
+    total_klaim?: number; // ← Added: Total_Tarif_BPJS dari DB (baseline untuk calculation)
+    billingId?: number;
+    tanggal_masuk?: string | null;
+    tanggal_keluar?: string | null;
   } | null>(null);
   const [billingHistoryInfo, setBillingHistoryInfo] = useState('Belum ada data yang dimuat. Pilih pasien untuk melihat riwayat.');
 
@@ -61,6 +71,27 @@ const BillingPasien = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Helper to compute billing_sign - compare Tarif RS vs Total Klaim BPJS
+  const computeBillingSign = (tarif: number, totalKlaim: number): string => {
+    const totalTarif = tarif || 0;
+    const klaim = totalKlaim || 0;
+
+    if (!klaim || klaim === 0) return '';
+    const percentage = (totalTarif / klaim) * 100;
+
+    if (percentage <= 25) {
+      return "Hijau"; // Tarif RS <=25% dari Klaim BPJS Efektif = AMAN
+    } else if (percentage <= 50) {
+      return "Kuning"; // 26%-50% = PERLU PERHATIAN
+    } else {
+      return "Merah"; // >50% = WASPADA
+    }
+  };
+
+  // Live display values (used in card)
+  const totalKlaimBPJSLive = (billingHistory && billingHistory.total_klaim) ? billingHistory.total_klaim : 0;
+  const liveBillingSign = computeBillingSign(totalTarifRS, totalKlaimBPJSLive);
 
   // Searchable dropdown state
   const [tindakanSearch, setTindakanSearch] = useState('');
@@ -113,12 +144,12 @@ const BillingPasien = () => {
         const dokter = JSON.parse(dokterData);
         if (dokter.id && dokter.nama) {
           // Cari dokter di dokterList berdasarkan ID
-          const foundDokter = dokterList.find(d => d.ID_Dokter === dokter.id);
+          const foundDokter = dokterList.find(d => (d as any).ID_Dokter === dokter.id);
           if (foundDokter) {
             // Set DPJP dengan ID dokter
-            setDpjp(foundDokter.ID_Dokter.toString());
+            setDpjp((foundDokter as any).ID_Dokter.toString());
             // Set search value dengan nama dokter
-            setDpjpSearch(foundDokter.Nama_Dokter);
+            setDpjpSearch((foundDokter as any).Nama_Dokter);
           } else {
             // Jika tidak ditemukan di list, tetap set dengan data dari localStorage
             setDpjp(dokter.id.toString());
@@ -134,6 +165,10 @@ const BillingPasien = () => {
   // Fetch dropdown data on mount - TIDAK ADA AUTO SAVE
   // HANYA FETCH DATA DROPDOWN, TIDAK MEMANGGIL createBilling ATAU handleSubmit
   useEffect(() => {
+    // Get user role
+    const role = localStorage.getItem("userRole") || "";
+    setUserRole(role);
+
     const fetchDropdownData = async () => {
       try {
         // Hanya fetch data dropdown, TIDAK save apapun
@@ -142,7 +177,7 @@ const BillingPasien = () => {
           getRuangan(),
           getICD9(),
           getICD10(),
-          getTarifRumahSakit({}),
+          getTarifRumahSakit(),
         ]);
 
         if (dokterRes.data) setDokterList(dokterRes.data);
@@ -164,7 +199,7 @@ const BillingPasien = () => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      
+
       // Check for tindakan dropdown
       if (tindakanDropdownOpen) {
         const isClickInsideInput = tindakanInputRef.current?.contains(target);
@@ -173,7 +208,7 @@ const BillingPasien = () => {
           setTindakanDropdownOpen(false);
         }
       }
-      
+
       // Check for ICD9 dropdown
       if (icd9DropdownOpen) {
         const isClickInsideInput = icd9InputRef.current?.contains(target);
@@ -182,7 +217,7 @@ const BillingPasien = () => {
           setIcd9DropdownOpen(false);
         }
       }
-      
+
       // Check for ICD10 dropdown
       if (icd10DropdownOpen) {
         const isClickInsideInput = icd10InputRef.current?.contains(target);
@@ -191,7 +226,7 @@ const BillingPasien = () => {
           setIcd10DropdownOpen(false);
         }
       }
-      
+
       // Check for Ruangan dropdown
       if (ruanganDropdownOpen) {
         const isClickInsideInput = ruanganInputRef.current?.contains(target);
@@ -200,7 +235,7 @@ const BillingPasien = () => {
           setRuanganDropdownOpen(false);
         }
       }
-      
+
       // Check for DPJP dropdown
       if (dpjpDropdownOpen) {
         const isClickInsideInput = dpjpInputRef.current?.contains(target);
@@ -226,15 +261,48 @@ const BillingPasien = () => {
     };
   }, [tindakanDropdownOpen, icd9DropdownOpen, icd10DropdownOpen, ruanganDropdownOpen, dpjpDropdownOpen, nameDropdownOpen]);
 
-  // Calculate total tarif RS when tindakan changes
-  // selectedTindakan sekarang menyimpan Deskripsi, jadi cari berdasarkan Deskripsi
-  useEffect(() => {
-    const total = selectedTindakan.reduce((sum, deskripsi) => {
-      const tarif = tarifRSList.find(t => t.Deskripsi === deskripsi);
-      return sum + (tarif?.Harga || 0);
-    }, 0);
-    setTotalTarifRS(total);
-  }, [selectedTindakan, tarifRSList]);
+  // Helper function to set ruangan display text based on ID/name
+  const setRuanganDisplay = (ruanganValue: string | number | undefined) => {
+    if (!ruanganValue) {
+      setRuangan('');
+      setRuanganSearch('');
+      return;
+    }
+
+    const ruanganStr = ruanganValue.toString().trim();
+    if (!ruanganStr) {
+      setRuangan('');
+      setRuanganSearch('');
+      return;
+    }
+
+    // Try to find by ID first
+    const ruanganDataById = ruanganList.find(r => (r as any).ID_Ruangan?.toString() === ruanganStr);
+    if (ruanganDataById) {
+      setRuangan(ruanganStr);
+      setRuanganSearch((ruanganDataById as any).Nama_Ruangan);
+      console.log(`✅ Ruangan matched by ID: ${ruanganStr} → ${(ruanganDataById as any).Nama_Ruangan}`);
+      return;
+    }
+
+    // Try to find by name if not found by ID
+    const ruanganDataByName = ruanganList.find(r => 
+      (r as any).Nama_Ruangan?.toLowerCase() === ruanganStr.toLowerCase()
+    );
+    if (ruanganDataByName) {
+      setRuangan((ruanganDataByName as any).ID_Ruangan?.toString() || ruanganStr);
+      setRuanganSearch((ruanganDataByName as any).Nama_Ruangan);
+      console.log(`✅ Ruangan matched by name: ${ruanganStr} → ${(ruanganDataByName as any).Nama_Ruangan}`);
+      return;
+    }
+
+    // If not found in list, assume it's already the display name
+    setRuangan(ruanganStr);
+    setRuanganSearch(ruanganStr);
+    console.log(`⚠️ Ruangan not found in list, using as-is: ${ruanganStr}`);
+  };
+
+  // Helper function to set gender properly
 
   // Search pasien - HANYA MENGISI FORM, TIDAK SAVE
   const handleSearchPasien = async () => {
@@ -247,37 +315,26 @@ const BillingPasien = () => {
       setSearchingPasien(true);
       setError('');
       const response = await searchPasien(namaPasien);
-      
+
       if (response.error) {
         setError(response.error);
         setSearchResults([]);
         return;
       }
 
-      if (response.data?.data) {
-        setSearchResults(response.data.data);
-        // Open suggestion dropdown when we get results
-        setNameDropdownOpen(response.data.data.length > 0);
-        if (response.data.data.length > 0) {
+      if ((response.data as any)?.data) {
+        setSearchResults((response.data as any).data);
+        setNameDropdownOpen((response.data as any).data.length > 0);
+        if ((response.data as any).data.length > 0) {
           // Hanya mengisi form dengan hasil pertama (saat tombol search diklik)
-          const pasien = response.data.data[0];
+          const pasien = (response.data as any).data[0];
           setIdPasien(pasien.ID_Pasien.toString());
           setUsia(pasien.Usia.toString());
           setGender(pasien.Jenis_Kelamin);
-          setRuangan(pasien.Ruangan);
           setKelas(pasien.Kelas);
 
-          // Set search value untuk ruangan dan DPJP jika ada
-          if (pasien.Ruangan) {
-            // Ruangan dari backend bisa berupa ID atau nama; coba cocokkan berdasarkan ID dulu
-            const ruanganDataById = ruanganList.find(r => r.ID_Ruangan?.toString() === pasien.Ruangan?.toString());
-            if (ruanganDataById) {
-              setRuanganSearch(ruanganDataById.Nama_Ruangan);
-            } else {
-              // Jika backend mengembalikan nama ruangan langsung, gunakan nilainya
-              setRuanganSearch(pasien.Ruangan);
-            }
-          }
+          // Set ruangan dengan helper function
+          setRuanganDisplay(pasien.Ruangan);
 
           // Load riwayat billing aktif (tindakan & ICD sebelumnya)
           await loadBillingAktifHistory(pasien.Nama_Pasien);
@@ -294,9 +351,19 @@ const BillingPasien = () => {
   // Load riwayat billing aktif untuk pasien
   const loadBillingAktifHistory = async (namaPasien: string) => {
     try {
-      const response = await fetch(`/api/billing/aktif?nama_pasien=${encodeURIComponent(namaPasien)}`);
-      
-      if (response.status === 404) {
+      if (!namaPasien || !namaPasien.trim()) {
+        setBillingHistory(null);
+        setBillingHistoryInfo('Nama pasien tidak boleh kosong');
+        setTotalTarifRS(0);
+        return;
+      }
+
+      const res = await getBillingAktifByNama(namaPasien);
+
+      console.log('Response dari getBillingAktifByNama:', res);
+      console.log('📡 Full API Response:', JSON.stringify(res, null, 2));
+
+      if (res.status === 404 || !res.data) {
         console.log('Tidak ada billing aktif untuk pasien ini');
         setBillingHistory(null);
         setBillingHistoryInfo('Tidak ada riwayat billing aktif untuk pasien ini.');
@@ -304,48 +371,77 @@ const BillingPasien = () => {
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (res.error) {
+        throw new Error(res.error);
       }
 
-      const data = await response.json();
-      const billingData = data.data || {};
+      // Handle different response structures
+      // Backend returns: { status: "success", data: { billing, tindakan_rs, icd9, icd10, dokter, inacbg_ri, inacbg_rj } }
+      let billingData = res.data;
+      
+      // If the actual data is nested under .data property
+      if ((res.data as any)?.data && typeof (res.data as any).data === 'object') {
+        // Check if it's the nested structure from backend
+        if ((res.data as any).data.billing !== undefined) {
+          // This is the correct nested structure from backend
+          billingData = (res.data as any).data;
+        } else {
+          // Otherwise just use res.data
+          billingData = res.data;
+        }
+      }
 
-      // Hanya ambil data untuk ditampilkan di tabel, TIDAK auto-fill form
-      const tindakan = Array.isArray(billingData.tindakan_rs) ? billingData.tindakan_rs : [];
-      const icd9 = Array.isArray(billingData.icd9) ? billingData.icd9 : [];
-      const icd10 = Array.isArray(billingData.icd10) ? billingData.icd10 : [];
-      // INACBG mungkin belum tersedia di endpoint ini, jadi kita set array kosong untuk sementara
-      const inacbgRI = Array.isArray(billingData.inacbg_ri) ? billingData.inacbg_ri : [];
-      const inacbgRJ = Array.isArray(billingData.inacbg_rj) ? billingData.inacbg_rj : [];
+      console.log('Billing data extracted:', billingData);
+
+      // Safely extract arrays
+      // Check both top-level and nested structure from backend
+      const tindakan = Array.isArray((billingData as any)?.tindakan_rs) ? (billingData as any).tindakan_rs : 
+                       Array.isArray((billingData as any)?.tindakan) ? (billingData as any).tindakan : [];
+      const icd9 = Array.isArray((billingData as any)?.icd9) ? (billingData as any).icd9 : [];
+      const icd10 = Array.isArray((billingData as any)?.icd10) ? (billingData as any).icd10 : [];
+      const inacbgRI = Array.isArray((billingData as any)?.inacbg_ri) ? (billingData as any).inacbg_ri : [];
+      const inacbgRJ = Array.isArray((billingData as any)?.inacbg_rj) ? (billingData as any).inacbg_rj : [];
       const inacbg = [...inacbgRI, ...inacbgRJ];
+
+      console.log('Extracted arrays:', { tindakan: tindakan.length, icd9: icd9.length, icd10: icd10.length, inacbg: inacbg.length });
+      console.log('Raw arrays:', { tindakan, icd9, icd10, inacbg });
 
       // Calculate total_tarif_rs dari tindakan_rs dengan lookup di tarifRSList
       let calculatedTotalTarif = 0;
       tindakan.forEach((deskripsi: string) => {
-        const tarif = tarifRSList.find(t => t.Deskripsi === deskripsi);
-        if (tarif && tarif.Harga) {
-          calculatedTotalTarif += tarif.Harga;
+        const tarif = tarifRSList.find(t => (t as any).Deskripsi === deskripsi);
+        if (tarif && (tarif as any).Harga) {
+          calculatedTotalTarif += (tarif as any).Harga;
         }
       });
 
+      // Prefer stored total_tarif_rs from backend billing object when available
+      const billingObj = (billingData as any)?.billing || billingData;
+      const storedTotalTarif = (billingObj as any)?.Total_Tarif_RS || (billingObj as any)?.total_tarif_rs || (billingObj as any)?.Total_Tarif || 0;
+      const finalTotalTarif = storedTotalTarif && storedTotalTarif > 0 ? storedTotalTarif : calculatedTotalTarif;
+
+      // Extract billing dates & total_klaim - check in billing object first, then top-level
+      let tanggalMasuk = (billingObj as any)?.Tanggal_masuk || (billingObj as any)?.tanggal_masuk;
+      let tanggalKeluar = (billingObj as any)?.Tanggal_keluar || (billingObj as any)?.tanggal_keluar;
+      let totalKlaim = (billingObj as any)?.Total_Tarif_BPJS || (billingObj as any)?.total_klaim || 0;
+      
+      console.log('💾 Extracted dates & total_klaim:', { tanggalMasuk, tanggalKeluar, totalKlaim, billingObj });
+
       // Set billing history untuk ditampilkan di tabel saja
       if (tindakan.length > 0 || icd9.length > 0 || icd10.length > 0 || inacbg.length > 0) {
-        setBillingHistory({ tindakan_rs: tindakan, icd9, icd10, inacbg, total_tarif_rs: calculatedTotalTarif });
+        const billingId = (billingData as any)?.ID_Billing || (billingData as any)?.id_billing || (billingObj as any)?.ID_Billing || (billingObj as any)?.id_billing;
+        setBillingHistory({ tindakan_rs: tindakan, icd9, icd10, inacbg, total_tarif_rs: finalTotalTarif, total_klaim: totalKlaim, billingId, tanggal_masuk: tanggalMasuk, tanggal_keluar: tanggalKeluar });
         setBillingHistoryInfo('Riwayat billing aktif berhasil dimuat.');
       } else {
         setBillingHistory(null);
         setBillingHistoryInfo('Tidak ada riwayat billing aktif untuk pasien ini.');
       }
 
-      // Auto-fill total_tarif_rs ke form dari calculated total
-      setTotalTarifRS(calculatedTotalTarif);
-
-      console.log('Billing aktif history loaded (calculated tarif):', { tindakan, icd9, icd10, inacbg, calculatedTotalTarif });
+      console.log('Billing aktif history loaded:', { tindakan, icd9, icd10, inacbg, calculatedTotalTarif });
     } catch (err) {
       console.error('Error loading billing history:', err);
       setBillingHistory(null);
-      setBillingHistoryInfo('Error: Gagal memload riwayat billing.');
+      setBillingHistoryInfo('Error: Gagal memload riwayat billing. ' + (err instanceof Error ? err.message : 'Silakan cek console untuk detail.'));
       setTotalTarifRS(0);
     }
   };
@@ -374,9 +470,9 @@ const BillingPasien = () => {
           setError(res.error);
           setSearchResults([]);
           setNameDropdownOpen(false);
-        } else if (res.data?.data) {
-          setSearchResults(res.data.data);
-          setNameDropdownOpen(res.data.data.length > 0);
+        } else if ((res.data as any)?.data) {
+          setSearchResults((res.data as any).data);
+          setNameDropdownOpen((res.data as any).data.length > 0);
         }
       } catch (err) {
         console.error(err);
@@ -396,25 +492,17 @@ const BillingPasien = () => {
     // Map backend gender values to the form's labels
     const jk = (pasien.Jenis_Kelamin || '').toString().toLowerCase();
     if (jk.includes('laki') || jk.includes('pria')) {
-      setGender('Pria');
+      setGender('Laki-Laki');
     } else if (jk.includes('wanita') || jk.includes('perempuan')) {
-      setGender('Wanita');
+      setGender('Perempuan');
     } else {
-      setGender(pasien.Jenis_Kelamin || 'Pria');
+      setGender(pasien.Jenis_Kelamin || 'Laki-Laki');
     }
 
-    setRuangan(pasien.Ruangan || '');
     setKelas(pasien.Kelas || '');
 
-    // Set search value untuk ruangan jika possible
-    if (pasien.Ruangan) {
-      const ruanganDataById = ruanganList.find(r => r.ID_Ruangan?.toString() === pasien.Ruangan?.toString());
-      if (ruanganDataById) {
-        setRuanganSearch(ruanganDataById.Nama_Ruangan);
-      } else {
-        setRuanganSearch(pasien.Ruangan);
-      }
-    }
+    // Set ruangan dengan helper function
+    setRuanganDisplay(pasien.Ruangan);
 
     setSearchResults([]);
     setNameDropdownOpen(false);
@@ -431,18 +519,42 @@ const BillingPasien = () => {
 
   // Add tindakan - menyimpan Deskripsi (bukan KodeRS) karena backend mencari dengan Tindakan_RS (Deskripsi)
   const handleAddTindakan = (kode: string) => {
-    const tarif = tarifRSList.find(t => t.KodeRS === kode);
-    if (tarif && tarif.Deskripsi && !selectedTindakan.includes(tarif.Deskripsi)) {
-      setSelectedTindakan([...selectedTindakan, tarif.Deskripsi]);
+    const tarif = tarifRSList.find(t => (t as any).KodeRS === kode);
+    if (tarif && (tarif as any).Deskripsi && !selectedTindakan.includes((tarif as any).Deskripsi)) {
+      setSelectedTindakan([...selectedTindakan, (tarif as any).Deskripsi]);
       setTindakanSearch('');
       setTindakanDropdownOpen(false);
     }
   };
 
+  // Calculate total tarif RS when tindakan changes
+  // selectedTindakan menyimpan Deskripsi, jadi cari berdasarkan Deskripsi dan sum Harga
+  // Display: history + tindakan baru | Kirim ke backend: hanya tindakan baru
+  useEffect(() => {
+    // Hitung total dari selectedTindakan saja
+    const selectedTotal = selectedTindakan.reduce((sum, deskripsi) => {
+      const tarif = tarifRSList.find(t => (t as any).Deskripsi === deskripsi);
+      const harga = (tarif as any)?.Harga || 0;
+      console.log(`📊 Tindakan: ${deskripsi} → Harga: ${harga}`);
+      return sum + harga;
+    }, 0);
+    
+    const historyTotal = billingHistory?.total_tarif_rs || 0;
+    
+    // Display: Tambahkan selected dengan history (untuk display card & form)
+    // Jika ada history dan user pilih tindakan → history + selected
+    // Jika tidak ada history dan user pilih tindakan → hanya selected
+    // Jika belum pick tindakan → hanya history (preview)
+    const displayTotal = selectedTindakan.length > 0 ? (historyTotal + selectedTotal) : historyTotal;
+    
+    console.log(`💰 Total Tarif RS Display: ${displayTotal} (History: ${historyTotal} + Selected: ${selectedTotal})`);
+    setTotalTarifRS(displayTotal);
+  }, [selectedTindakan, tarifRSList, billingHistory]);
+
   // Filter tindakan berdasarkan search
   const filteredTindakan = tarifRSList.filter((t) =>
-    t.Deskripsi?.toLowerCase().includes(tindakanSearch.toLowerCase()) ||
-    t.KodeRS?.toLowerCase().includes(tindakanSearch.toLowerCase())
+    (t as any).Deskripsi?.toLowerCase().includes(tindakanSearch.toLowerCase()) ||
+    (t as any).KodeRS?.toLowerCase().includes(tindakanSearch.toLowerCase())
   );
 
   // Remove tindakan - sekarang menggunakan Deskripsi
@@ -452,9 +564,9 @@ const BillingPasien = () => {
 
   // Add ICD9 - menyimpan Prosedur (bukan Kode_ICD9) karena backend mencari dengan Prosedur
   const handleAddICD9 = (kode: string) => {
-    const icd = icd9List.find(i => i.Kode_ICD9 === kode);
-    if (icd && icd.Prosedur && !selectedICD9.includes(icd.Prosedur)) {
-      setSelectedICD9([...selectedICD9, icd.Prosedur]);
+    const icd = icd9List.find(i => (i as any).Kode_ICD9 === kode);
+    if (icd && (icd as any).Prosedur && !selectedICD9.includes((icd as any).Prosedur)) {
+      setSelectedICD9([...selectedICD9, (icd as any).Prosedur]);
       setIcd9Search('');
       setIcd9DropdownOpen(false);
     }
@@ -462,8 +574,8 @@ const BillingPasien = () => {
 
   // Filter ICD9 berdasarkan search
   const filteredICD9 = icd9List.filter((icd) =>
-    icd.Prosedur?.toLowerCase().includes(icd9Search.toLowerCase()) ||
-    icd.Kode_ICD9?.toLowerCase().includes(icd9Search.toLowerCase())
+    (icd as any).Prosedur?.toLowerCase().includes(icd9Search.toLowerCase()) ||
+    (icd as any).Kode_ICD9?.toLowerCase().includes(icd9Search.toLowerCase())
   );
 
   // Remove ICD9 - sekarang menggunakan Prosedur
@@ -473,9 +585,9 @@ const BillingPasien = () => {
 
   // Add ICD10 - menyimpan Diagnosa (bukan Kode_ICD10) karena backend mencari dengan Diagnosa
   const handleAddICD10 = (kode: string) => {
-    const icd = icd10List.find(i => i.Kode_ICD10 === kode);
-    if (icd && icd.Diagnosa && !selectedICD10.includes(icd.Diagnosa)) {
-      setSelectedICD10([...selectedICD10, icd.Diagnosa]);
+    const icd = icd10List.find(i => (i as any).Kode_ICD10 === kode);
+    if (icd && (icd as any).Diagnosa && !selectedICD10.includes((icd as any).Diagnosa)) {
+      setSelectedICD10([...selectedICD10, (icd as any).Diagnosa]);
       setIcd10Search('');
       setIcd10DropdownOpen(false);
     }
@@ -483,8 +595,8 @@ const BillingPasien = () => {
 
   // Filter ICD10 berdasarkan search
   const filteredICD10 = icd10List.filter((icd) =>
-    icd.Diagnosa?.toLowerCase().includes(icd10Search.toLowerCase()) ||
-    icd.Kode_ICD10?.toLowerCase().includes(icd10Search.toLowerCase())
+    (icd as any).Diagnosa?.toLowerCase().includes(icd10Search.toLowerCase()) ||
+    (icd as any).Kode_ICD10?.toLowerCase().includes(icd10Search.toLowerCase())
   );
 
   // Handle select Ruangan
@@ -496,8 +608,8 @@ const BillingPasien = () => {
 
   // Filter Ruangan berdasarkan search
   const filteredRuangan = ruanganList.filter((r) =>
-    r.Nama_Ruangan?.toLowerCase().includes(ruanganSearch.toLowerCase()) ||
-    r.ID_Ruangan?.toString().toLowerCase().includes(ruanganSearch.toLowerCase())
+    (r as any).Nama_Ruangan?.toLowerCase().includes(ruanganSearch.toLowerCase()) ||
+    (r as any).ID_Ruangan?.toString().toLowerCase().includes(ruanganSearch.toLowerCase())
   );
 
   // Handle select DPJP
@@ -509,18 +621,18 @@ const BillingPasien = () => {
 
   // Filter DPJP berdasarkan search
   const filteredDPJP = dokterList.filter((d) =>
-    d.Nama_Dokter?.toLowerCase().includes(dpjpSearch.toLowerCase()) ||
-    d.ID_Dokter?.toString().toLowerCase().includes(dpjpSearch.toLowerCase())
+    (d as any).Nama_Dokter?.toLowerCase().includes(dpjpSearch.toLowerCase()) ||
+    (d as any).ID_Dokter?.toString().toLowerCase().includes(dpjpSearch.toLowerCase())
   );
 
   // Remove duplicates based on Nama_Dokter (keep first occurrence)
   const uniqueDPJP = filteredDPJP.filter((d, index, self) =>
-    index === self.findIndex((t) => t.Nama_Dokter === d.Nama_Dokter)
+    index === self.findIndex((t) => (t as any).Nama_Dokter === (d as any).Nama_Dokter)
   );
 
   // Remove duplicates from full dokterList as well
   const uniqueDokterList = dokterList.filter((d, index, self) =>
-    index === self.findIndex((t) => t.Nama_Dokter === d.Nama_Dokter)
+    index === self.findIndex((t) => (t as any).Nama_Dokter === (d as any).Nama_Dokter)
   );
 
   // Remove ICD10 - sekarang menggunakan Diagnosa
@@ -533,10 +645,10 @@ const BillingPasien = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Debug: Log untuk memastikan hanya dipanggil saat tombol Save diklik
     console.log('handleSubmit called - User clicked Save button');
-    
+
     // Prevent multiple submissions
     if (isSubmitting || loading) {
       console.log('Submit blocked - already submitting');
@@ -552,8 +664,19 @@ const BillingPasien = () => {
       return;
     }
 
-    if (selectedTindakan.length === 0 || selectedICD10.length === 0) {
-      setError('Mohon pilih minimal satu tindakan dan ICD10');
+    // Check apakah pasien baru atau sudah ada (existing)
+    const isPasienBaru = !billingHistory; // Jika billingHistory null, pasien baru
+
+    if (selectedTindakan.length === 0) {
+      setError('Mohon pilih minimal satu tindakan');
+      return;
+    }
+
+    // Conditional validation untuk ICD10
+    // Pasien baru: ICD10 WAJIB
+    // Pasien existing: ICD10 OPTIONAL
+    if (isPasienBaru && selectedICD10.length === 0) {
+      setError('Mohon pilih minimal satu ICD10 (wajib untuk pasien baru)');
       return;
     }
 
@@ -562,27 +685,66 @@ const BillingPasien = () => {
       setLoading(true);
 
       // Get dokter name from ID
-      const selectedDokter = dokterList.find(d => d.ID_Dokter.toString() === dpjp);
+      const selectedDokter = dokterList.find(d => (d as any).ID_Dokter.toString() === dpjp);
       if (!selectedDokter) {
         setError('Dokter tidak ditemukan');
         setLoading(false);
         return;
       }
 
+      // Helper function untuk convert YYYY-MM-DD (dari date input) atau DD/MM/YYYY ke YYYY-MM-DD
+      const convertDateFormat = (dateStr: string): string => {
+        if (!dateStr) return '';
+        // Check if format is already YYYY-MM-DD (from HTML5 date input)
+        if (dateStr.includes('-') && dateStr.length === 10) {
+          const parts = dateStr.split('-');
+          if (parts.length === 3 && parts[0].length === 4) {
+            // Already in YYYY-MM-DD format
+            return dateStr;
+          }
+        }
+        // If format is DD/MM/YYYY, convert to YYYY-MM-DD
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          return `${year}-${month}-${day}`;
+        }
+        // If cannot parse, return empty
+        return '';
+      };
+
+        
+
+      const totalKlaimBPJS = (billingHistory && billingHistory.total_klaim) ? billingHistory.total_klaim : 0;
+      
       const billingData: BillingRequest = {
-        nama_dokter: [selectedDokter.Nama_Dokter],
         nama_pasien: namaPasien,
+        id_pasien: idPasien ? parseInt(idPasien) : undefined,
         jenis_kelamin: gender,
         usia: parseInt(usia),
         ruangan: ruangan,
         kelas: kelas,
+        nama_dokter: [(selectedDokter as any).Nama_Dokter],
         tindakan_rs: selectedTindakan,
-        tanggal_keluar: tanggalKeluar || undefined,
+        // compute billing_sign dynamically using helper
+        billing_sign: computeBillingSign(totalTarifRS, totalKlaimBPJS),
+        tanggal_masuk: convertDateFormat(tanggalMasuk),
+        tanggal_keluar: convertDateFormat(tanggalKeluar) || '',
         icd9: selectedICD9,
         icd10: selectedICD10,
         cara_bayar: caraBayar,
+        // PENTING: Kirim totalTarifRS (final total = history + selected) agar backend tidak double
         total_tarif_rs: totalTarifRS,
+        total_klaim_bpjs: totalKlaimBPJS, // ← Added: Send baseline BPJS claim to backend
       };
+
+      console.log('📤 Sending billing data to backend:', {
+        ...billingData,
+        billing_sign: billingData.billing_sign,
+        total_tarif_rs: billingData.total_tarif_rs,
+        total_klaim_bpjs: billingData.total_klaim_bpjs,
+        billingHistoryTotalKlaim: billingHistory?.total_klaim,
+      });
 
       const response = await createBilling(billingData);
 
@@ -594,9 +756,9 @@ const BillingPasien = () => {
 
       if (response.data) {
         setSuccess('Billing berhasil dibuat!');
-        
+
         // Simpan data ke localStorage untuk INACBG admin page
-        const billingResponse = response.data.data?.billing || {};
+        const billingResponse = (response.data as any).data?.billing || {};
         const billingDataForINACBG = {
           id_billing: billingResponse.ID_Billing,
           nama_pasien: namaPasien,
@@ -615,13 +777,15 @@ const BillingPasien = () => {
         };
         localStorage.setItem('currentBillingData', JSON.stringify(billingDataForINACBG));
         console.log('💾 Billing data saved to localStorage:', billingDataForINACBG);
-        
+
         // Reset form setelah berhasil save
         setTimeout(() => {
           setNamaPasien('');
           setIdPasien('');
           setUsia('');
-          setGender('Pria');
+          setIdPasien('');
+          setUsia('');
+          setGender('Laki-Laki');
           setRuangan('');
           setRuanganSearch('');
           setKelas('');
@@ -670,8 +834,8 @@ const BillingPasien = () => {
         </div>
       )}
 
-      <form 
-        onSubmit={handleSubmit} 
+      <form
+        onSubmit={handleSubmit}
         className="w-full"
         onKeyDown={(e) => {
           // Prevent form submission on Enter key unless it's the submit button
@@ -708,24 +872,64 @@ const BillingPasien = () => {
               >
                 <FaSearch />
               </button>
+              {nameDropdownOpen && searchResults.length > 0 && (
+                <div
+                  ref={nameDropdownRef}
+                  className="absolute top-full z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(15rem,calc(100vh-12rem))] overflow-y-auto"
+                  style={{ left: 0 }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  {searchResults.map((p) => (
+                    <div
+                      key={p.ID_Pasien}
+                      onClick={() => selectPasien(p)}
+                      className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
+                    >
+                      <div className="font-medium">{p.Nama_Pasien}</div>
+                      <div className="text-xs text-gray-600">{p.Usia} tahun — {p.Ruangan}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {nameDropdownOpen && searchResults.length > 0 && (
-              <div
-                ref={nameDropdownRef}
-                className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(15rem,calc(100vh-12rem))] overflow-y-auto"
-                style={{ left: 0 }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                {searchResults.map((p) => (
-                  <div
-                    key={p.ID_Pasien}
-                    onClick={() => selectPasien(p)}
-                    className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
-                  >
-                    <div className="font-medium">{p.Nama_Pasien}</div>
-                    <div className="text-xs text-gray-600">{p.Usia} tahun — {p.Ruangan}</div>
+
+            {/* Live Billing Sign Card (mirip INACBG) */}
+            {totalTarifRS > 0 && totalKlaimBPJSLive > 0 && (
+              <div className="ml-0 sm:ml-4 mt-4 mb-4 p-3 sm:p-4 rounded-lg border-2" style={{
+                borderColor: liveBillingSign === 'Merah' ? '#dc2626' : liveBillingSign === 'Kuning' ? '#f59e0b' : '#10b981',
+                backgroundColor: liveBillingSign === 'Merah' ? '#fee2e2' : liveBillingSign === 'Kuning' ? '#fef3c7' : '#ecfdf5'
+              }}>
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <div className="flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full" style={{
+                      backgroundColor: liveBillingSign === 'Merah' ? '#dc2626' : liveBillingSign === 'Kuning' ? '#f59e0b' : '#10b981'
+                    }}>
+                      <span className="text-white font-bold text-xs sm:text-sm">!</span>
+                    </div>
                   </div>
-                ))}
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm sm:text-base" style={{
+                      color: liveBillingSign === 'Merah' ? '#7f1d1d' : liveBillingSign === 'Kuning' ? '#92400e' : '#065f46'
+                    }}>
+                      {liveBillingSign === 'Merah' ? '⚠️ Perhatian: Tarif RS Melebihi INACBG' :
+                       liveBillingSign === 'Kuning' ? '⚠️ Perhatian: Tarif RS Mendekati INACBG' :
+                       '✅ Tarif RS Dalam Batas Aman'}
+                    </p>
+                    <p className="text-xs sm:text-sm mt-1" style={{
+                      color: liveBillingSign === 'Merah' ? '#991b1b' : liveBillingSign === 'Kuning' ? '#b45309' : '#047857'
+                    }}>
+                      Tarif RS: Rp {totalTarifRS.toLocaleString('id-ID')} | 
+                      INACBG: Rp {totalKlaimBPJSLive.toLocaleString('id-ID')}
+                    </p>
+                    {liveBillingSign === 'Merah' && (
+                      <p className="text-xs sm:text-sm mt-1" style={{
+                        color: liveBillingSign === 'Merah' ? '#991b1b' : '#047857'
+                      }}>
+                        Selisih: Rp {(totalTarifRS - totalKlaimBPJSLive).toLocaleString('id-ID')}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             {searchResults.length > 0 && (
@@ -811,7 +1015,7 @@ const BillingPasien = () => {
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && filteredRuangan.length > 0) {
-                      handleSelectRuangan(filteredRuangan[0].ID_Ruangan.toString(), filteredRuangan[0].Nama_Ruangan);
+                      handleSelectRuangan((filteredRuangan[0] as any).ID_Ruangan.toString(), (filteredRuangan[0] as any).Nama_Ruangan);
                       e.preventDefault();
                     }
                   }}
@@ -832,18 +1036,18 @@ const BillingPasien = () => {
                   className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
                 />
                 {ruanganDropdownOpen && (
-                  <div 
+                  <div
                     ref={ruanganDropdownRef}
                     className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto"
                     onMouseDown={(e) => e.stopPropagation()}
                   >
                     {(ruanganSearch ? filteredRuangan : ruanganList).map((r) => (
                       <div
-                        key={r.ID_Ruangan}
-                        onClick={() => handleSelectRuangan(r.ID_Ruangan.toString(), r.Nama_Ruangan)}
+                        key={(r as any).ID_Ruangan}
+                        onClick={() => handleSelectRuangan((r as any).ID_Ruangan.toString(), (r as any).Nama_Ruangan)}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
                       >
-                        <div className="font-medium">{r.Nama_Ruangan}</div>
+                        <div className="font-medium">{(r as any).Nama_Ruangan}</div>
                       </div>
                     ))}
                     {ruanganSearch && filteredRuangan.length === 0 && (
@@ -948,12 +1152,12 @@ const BillingPasien = () => {
                   }
                   setDpjpJustClosed(false);
                 }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && uniqueDPJP.length > 0) {
-                      handleSelectDPJP(uniqueDPJP[0].ID_Dokter.toString(), uniqueDPJP[0].Nama_Dokter);
-                      e.preventDefault();
-                    }
-                  }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && uniqueDPJP.length > 0) {
+                    handleSelectDPJP((uniqueDPJP[0] as any).ID_Dokter.toString(), (uniqueDPJP[0] as any).Nama_Dokter);
+                    e.preventDefault();
+                  }
+                }}
                 className="w-full border text-sm border-blue-200 rounded-full py-2 sm:py-3 pl-3 sm:pl-4 pr-10 sm:pr-12 text-[#2591D0] placeholder-blue-400 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 focus:outline-0"
                 required
               />
@@ -971,18 +1175,18 @@ const BillingPasien = () => {
                 className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
               />
               {dpjpDropdownOpen && (
-                <div 
+                <div
                   ref={dpjpDropdownRef}
                   className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto"
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {(dpjpSearch ? uniqueDPJP : uniqueDokterList).map((d) => (
                     <div
-                      key={d.ID_Dokter}
-                      onClick={() => handleSelectDPJP(d.ID_Dokter.toString(), d.Nama_Dokter)}
+                      key={(d as any).ID_Dokter}
+                      onClick={() => handleSelectDPJP((d as any).ID_Dokter.toString(), (d as any).Nama_Dokter)}
                       className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
                     >
-                      <div className="font-medium">{d.Nama_Dokter}</div>
+                      <div className="font-medium">{(d as any).Nama_Dokter}</div>
                     </div>
                   ))}
                   {dpjpSearch && uniqueDPJP.length === 0 && (
@@ -1019,7 +1223,7 @@ const BillingPasien = () => {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && filteredTindakan.length > 0) {
-                        handleAddTindakan(filteredTindakan[0].KodeRS);
+                        handleAddTindakan((filteredTindakan[0] as any).KodeRS);
                         e.preventDefault();
                       }
                     }}
@@ -1039,19 +1243,19 @@ const BillingPasien = () => {
                     className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
                   />
                   {tindakanDropdownOpen && (
-                    <div 
+                    <div
                       ref={tindakanDropdownRef}
                       className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
                       {(tindakanSearch ? filteredTindakan : tarifRSList).map((t) => (
                         <div
-                          key={t.KodeRS}
-                          onClick={() => handleAddTindakan(t.KodeRS)}
+                          key={(t as any).KodeRS}
+                          onClick={() => handleAddTindakan((t as any).KodeRS)}
                           className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
                         >
-                          <div className="font-medium">{t.KodeRS}</div>
-                          <div className="text-xs text-gray-600">{t.Deskripsi}</div>
+                          <div className="font-medium">{(t as any).KodeRS}</div>
+                          <div className="text-xs text-gray-600">{(t as any).Deskripsi}</div>
                         </div>
                       ))}
                       {tindakanSearch && filteredTindakan.length === 0 && (
@@ -1067,7 +1271,7 @@ const BillingPasien = () => {
                   className="w-7 h-7 sm:w-8 sm:h-8 bg-[#2591D0] rounded-full flex items-center justify-center text-white hover:bg-[#1e7ba8] transition-colors flex-shrink-0"
                   onClick={() => {
                     if (filteredTindakan.length > 0) {
-                      handleAddTindakan(filteredTindakan[0].KodeRS);
+                      handleAddTindakan((filteredTindakan[0] as any).KodeRS);
                     }
                   }}
                 >
@@ -1077,19 +1281,24 @@ const BillingPasien = () => {
               {/* Selected tindakan chips */}
               {selectedTindakan.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedTindakan.map((t) => (
-                    <div key={t} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
-                      <span className="mr-2">{t}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTindakan(t)}
-                        className="text-red-500 hover:text-red-700 ml-1"
-                        aria-label={`Hapus tindakan ${t}`}
-                      >
-                        <FaTrash />
-                      </button>
-                    </div>
-                  ))}
+                  {selectedTindakan.map((t) => {
+                    const tarif = tarifRSList.find(tar => (tar as any).Deskripsi === t);
+                    const harga = (tarif as any)?.Harga || 0;
+                    return (
+                      <div key={t} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
+                        <span className="mr-2">{t}</span>
+                        <span className="text-xs text-gray-600 mr-2">Rp {harga.toLocaleString('id-ID')}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTindakan(t)}
+                          className="text-red-500 hover:text-red-700 ml-1"
+                          aria-label={`Hapus tindakan ${t}`}
+                        >
+                          <FaTrash />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1108,7 +1317,22 @@ const BillingPasien = () => {
 
           {/* Riwayat Billing Aktif (Tindakan & ICD Sebelumnya) */}
           <div className="ml-0 sm:ml-4 mt-4 sm:mt-6 mb-4 sm:mb-6 w-full max-w-full">
-            <label className="block text-sm sm:text-md text-[#2591D0] mb-2 sm:mb-3 font-bold">Riwayat Tindakan & ICD (Billing Aktif)</label>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+              <label className="block text-sm sm:text-md text-[#2591D0] font-bold">Riwayat Tindakan & ICD (Billing Aktif)</label>
+              {userRole === "admin" && billingHistory && billingHistory.billingId && (
+                <button
+                  onClick={() => {
+                    if (onEditBilling) {
+                      onEditBilling(billingHistory.billingId!, namaPasien);
+                    }
+                  }}
+                  className="flex items-center gap-2 bg-blue-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors text-xs sm:text-sm"
+                >
+                  <span>✏️</span>
+                  <span>Edit INACBG</span>
+                </button>
+              )}
+            </div>
             <div className="text-xs sm:text-sm text-blue-600 mb-3">{billingHistoryInfo}</div>
             {billingHistory && (billingHistory.tindakan_rs.length > 0 || billingHistory.icd9.length > 0 || billingHistory.icd10.length > 0 || (billingHistory.inacbg && billingHistory.inacbg.length > 0)) && (
               <>
@@ -1117,6 +1341,8 @@ const BillingPasien = () => {
                   <table className="w-full text-sm md:text-base border-collapse">
                     <thead>
                       <tr className="bg-blue-100 border-b border-blue-200">
+                        <th className="border border-blue-200 p-3 md:p-4 text-left font-semibold text-[#2591D0]">Tanggal Masuk</th>
+                        <th className="border border-blue-200 p-3 md:p-4 text-left font-semibold text-[#2591D0]">Tanggal Keluar</th>
                         <th className="border border-blue-200 p-3 md:p-4 text-left font-semibold text-[#2591D0]">Tindakan RS</th>
                         <th className="border border-blue-200 p-3 md:p-4 text-left font-semibold text-[#2591D0]">ICD 9</th>
                         <th className="border border-blue-200 p-3 md:p-4 text-left font-semibold text-[#2591D0]">ICD 10</th>
@@ -1129,6 +1355,16 @@ const BillingPasien = () => {
                           length: Math.max(billingHistory.tindakan_rs.length, billingHistory.icd9.length, billingHistory.icd10.length, billingHistory.inacbg?.length || 0)
                         }).map((_, idx) => (
                           <tr key={`history-row-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                            <td className="border border-blue-200 p-3 md:p-4 text-[#2591D0] break-words">
+                              {billingHistory.tanggal_masuk
+                                ? new Date(billingHistory.tanggal_masuk).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+                                : '-'}
+                            </td>
+                            <td className="border border-blue-200 p-3 md:p-4 text-[#2591D0] break-words">
+                              {billingHistory.tanggal_keluar
+                                ? new Date(billingHistory.tanggal_keluar).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+                                : '-'}
+                            </td>
                             <td className="border border-blue-200 p-3 md:p-4 text-[#2591D0] break-words">
                               {billingHistory.tindakan_rs[idx] || '-'}
                             </td>
@@ -1145,7 +1381,7 @@ const BillingPasien = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={4} className="border border-blue-200 p-4 text-center text-gray-500">
+                          <td colSpan={6} className="border border-blue-200 p-4 text-center text-gray-500">
                             Tidak ada riwayat
                           </td>
                         </tr>
@@ -1165,6 +1401,26 @@ const BillingPasien = () => {
                         className="bg-white border border-blue-200 rounded-lg shadow-sm p-3 sm:p-4 hover:shadow-md transition-shadow"
                       >
                         <div className="space-y-2">
+                          <div className="flex flex-col space-y-1">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              Tanggal Masuk
+                            </span>
+                            <span className="text-sm text-[#2591D0] break-words">
+                              {billingHistory.tanggal_masuk
+                                ? new Date(billingHistory.tanggal_masuk).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+                                : '-'}
+                            </span>
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              Tanggal Keluar
+                            </span>
+                            <span className="text-sm text-[#2591D0] break-words">
+                              {billingHistory.tanggal_keluar
+                                ? new Date(billingHistory.tanggal_keluar).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+                                : '-'}
+                            </span>
+                          </div>
                           <div className="flex flex-col space-y-1">
                             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                               Tindakan RS
@@ -1210,105 +1466,8 @@ const BillingPasien = () => {
             )}
           </div>
 
-          {/* Baris 2: ICD 9 dan ICD 10 - BERSEBELAHAN, TERPISAH KIRI KANAN */}
+          {/* Baris 2: ICD 10 dan ICD 9 - BERSEBELAHAN, TERPISAH KIRI KANAN */}
           <div className="ml-0 sm:ml-4 mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-x-6 md:gap-x-12 sm:gap-y-6 w-full max-w-full">
-            {/* ICD 9 */}
-            <div className="w-full relative">
-              <label className="block text-sm sm:text-md text-[#2591D0] mb-1 sm:mb-2 font-bold">ICD 9</label>
-              <div className="flex items-center gap-2 sm:gap-3 mb-2 relative">
-                <div className="flex-1 relative">
-                  <input
-                    ref={icd9InputRef}
-                    type="text"
-                    placeholder="Masukkan prosedur atau klik untuk melihat semua"
-                    value={icd9Search}
-                    onChange={(e) => {
-                      setIcd9Search(e.target.value);
-                      setIcd9DropdownOpen(true);
-                    }}
-                    onFocus={() => {
-                      if (!icd9JustClosed) {
-                        setIcd9DropdownOpen(true);
-                      }
-                      setIcd9JustClosed(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && filteredICD9.length > 0) {
-                        handleAddICD9(filteredICD9[0].Kode_ICD9);
-                        e.preventDefault();
-                      }
-                    }}
-                    className="w-full border text-sm border-blue-200 rounded-full py-2 sm:py-3 pl-3 sm:pl-4 pr-10 sm:pr-12 text-[#2591D0] placeholder-blue-400 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 focus:outline-0"
-                  />
-                  <FaChevronDown
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (icd9DropdownOpen) {
-                        setIcd9JustClosed(true);
-                        setIcd9DropdownOpen(false);
-                      } else {
-                        setIcd9JustClosed(false);
-                        setIcd9DropdownOpen(true);
-                      }
-                    }}
-                    className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
-                  />
-                  {icd9DropdownOpen && (
-                    <div 
-                      ref={icd9DropdownRef}
-                      className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto"
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      {(icd9Search ? filteredICD9 : icd9List).map((icd) => (
-                        <div
-                          key={icd.Kode_ICD9}
-                          onClick={() => handleAddICD9(icd.Kode_ICD9)}
-                          className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
-                        >
-                          <div className="font-medium">{icd.Kode_ICD9}</div>
-                          <div className="text-xs text-gray-600">{icd.Prosedur}</div>
-                        </div>
-                      ))}
-                      {icd9Search && filteredICD9.length === 0 && (
-                        <div className="px-4 py-2 text-sm text-gray-500 text-center">
-                          Tidak ada hasil ditemukan
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="w-7 h-7 sm:w-8 sm:h-8 bg-[#2591D0] rounded-full flex items-center justify-center text-white hover:bg-[#1e7ba8] transition-colors flex-shrink-0"
-                  onClick={() => {
-                    if (filteredICD9.length > 0) {
-                      handleAddICD9(filteredICD9[0].Kode_ICD9);
-                    }
-                  }}
-                >
-                  <FaPlus className="text-xs sm:text-sm" />
-                </button>
-              </div>
-              {/* Selected ICD9 chips */}
-              {selectedICD9.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedICD9.map((p) => (
-                    <div key={p} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
-                      <span className="mr-2">{p}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveICD9(p)}
-                        className="text-red-500 hover:text-red-700 ml-1"
-                        aria-label={`Hapus ICD9 ${p}`}
-                      >
-                        <FaTrash />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* ICD 10 */}
             <div className="w-full relative">
               <label className="block text-sm sm:text-md text-[#2591D0] mb-1 sm:mb-2 font-bold">ICD 10</label>
@@ -1331,7 +1490,7 @@ const BillingPasien = () => {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && filteredICD10.length > 0) {
-                        handleAddICD10(filteredICD10[0].Kode_ICD10);
+                        handleAddICD10((filteredICD10[0] as any).Kode_ICD10);
                         e.preventDefault();
                       }
                     }}
@@ -1351,19 +1510,19 @@ const BillingPasien = () => {
                     className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
                   />
                   {icd10DropdownOpen && (
-                    <div 
+                    <div
                       ref={icd10DropdownRef}
                       className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
                       {(icd10Search ? filteredICD10 : icd10List).map((icd) => (
                         <div
-                          key={icd.Kode_ICD10}
-                          onClick={() => handleAddICD10(icd.Kode_ICD10)}
+                          key={(icd as any).Kode_ICD10}
+                          onClick={() => handleAddICD10((icd as any).Kode_ICD10)}
                           className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
                         >
-                          <div className="font-medium">{icd.Kode_ICD10}</div>
-                          <div className="text-xs text-gray-600">{icd.Diagnosa}</div>
+                          <div className="font-medium">{(icd as any).Kode_ICD10}</div>
+                          <div className="text-xs text-gray-600">{(icd as any).Diagnosa}</div>
                         </div>
                       ))}
                       {icd10Search && filteredICD10.length === 0 && (
@@ -1379,7 +1538,7 @@ const BillingPasien = () => {
                   className="w-7 h-7 sm:w-8 sm:h-8 bg-[#2591D0] rounded-full flex items-center justify-center text-white hover:bg-[#1e7ba8] transition-colors flex-shrink-0"
                   onClick={() => {
                     if (filteredICD10.length > 0) {
-                      handleAddICD10(filteredICD10[0].Kode_ICD10);
+                      handleAddICD10((filteredICD10[0] as any).Kode_ICD10);
                     }
                   }}
                 >
@@ -1389,14 +1548,111 @@ const BillingPasien = () => {
               {/* Selected ICD10 chips */}
               {selectedICD10.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedICD10.map((d) => (
-                    <div key={d} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
-                      <span className="mr-2">{d}</span>
+                  {selectedICD10.map((p) => (
+                    <div key={p} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
+                      <span className="mr-2">{p}</span>
                       <button
                         type="button"
-                        onClick={() => handleRemoveICD10(d)}
+                        onClick={() => handleRemoveICD10(p)}
                         className="text-red-500 hover:text-red-700 ml-1"
-                        aria-label={`Hapus ICD10 ${d}`}
+                        aria-label={`Hapus ICD10 ${p}`}
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ICD 9 */}
+            <div className="w-full relative">
+              <label className="block text-sm sm:text-md text-[#2591D0] mb-1 sm:mb-2 font-bold">ICD 9</label>
+              <div className="flex items-center gap-2 sm:gap-3 mb-2 relative">
+                <div className="flex-1 relative">
+                  <input
+                    ref={icd9InputRef}
+                    type="text"
+                    placeholder="Masukkan prosedur atau klik untuk melihat semua"
+                    value={icd9Search}
+                    onChange={(e) => {
+                      setIcd9Search(e.target.value);
+                      setIcd9DropdownOpen(true);
+                    }}
+                    onFocus={() => {
+                      if (!icd9JustClosed) {
+                        setIcd9DropdownOpen(true);
+                      }
+                      setIcd9JustClosed(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && filteredICD9.length > 0) {
+                        handleAddICD9((filteredICD9[0] as any).Kode_ICD9);
+                        e.preventDefault();
+                      }
+                    }}
+                    className="w-full border text-sm border-blue-200 rounded-full py-2 sm:py-3 pl-3 sm:pl-4 pr-10 sm:pr-12 text-[#2591D0] placeholder-blue-400 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 focus:outline-0"
+                  />
+                  <FaChevronDown
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (icd9DropdownOpen) {
+                        setIcd9JustClosed(true);
+                        setIcd9DropdownOpen(false);
+                      } else {
+                        setIcd9JustClosed(false);
+                        setIcd9DropdownOpen(true);
+                      }
+                    }}
+                    className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-blue-400 cursor-pointer hover:text-blue-600 text-sm sm:text-base pointer-events-auto z-10"
+                  />
+                  {icd9DropdownOpen && (
+                    <div
+                      ref={icd9DropdownRef}
+                      className="absolute z-50 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-[min(24rem,calc(100vh-12rem))] overflow-y-auto"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      {(icd9Search ? filteredICD9 : icd9List).map((icd) => (
+                        <div
+                          key={(icd as any).Kode_ICD9}
+                          onClick={() => handleAddICD9((icd as any).Kode_ICD9)}
+                          className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-[#2591D0]"
+                        >
+                          <div className="font-medium">{(icd as any).Kode_ICD9}</div>
+                          <div className="text-xs text-gray-600">{(icd as any).Prosedur}</div>
+                        </div>
+                      ))}
+                      {icd9Search && filteredICD9.length === 0 && (
+                        <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                          Tidak ada hasil ditemukan
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="w-7 h-7 sm:w-8 sm:h-8 bg-[#2591D0] rounded-full flex items-center justify-center text-white hover:bg-[#1e7ba8] transition-colors flex-shrink-0"
+                  onClick={() => {
+                    if (filteredICD9.length > 0) {
+                      handleAddICD9((filteredICD9[0] as any).Kode_ICD9);
+                    }
+                  }}
+                >
+                  <FaPlus className="text-xs sm:text-sm" />
+                </button>
+              </div>
+              {/* Selected ICD9 chips */}
+              {selectedICD9.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {selectedICD9.map((p) => (
+                    <div key={p} className="flex items-center bg-blue-50 border border-blue-200 text-[#2591D0] rounded-full px-3 py-1 text-sm">
+                      <span className="mr-2">{p}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveICD9(p)}
+                        className="text-red-500 hover:text-red-700 ml-1"
+                        aria-label={`Hapus ICD9 ${p}`}
                       >
                         <FaTrash />
                       </button>
